@@ -23,6 +23,7 @@ import (
 )
 
 var Debug bool
+var Verbose bool
 var Timestamp bool
 
 // Logger is a global logger that respects the Timestamp flag.
@@ -43,11 +44,11 @@ func DebugLog(format string, v ...interface{}) {
 }
 
 // ServerErrorLog returns an *log.Logger for http.Server.ErrorLog that is
-// silent unless Debug is enabled. net/http logs noisy internals through it
-// (e.g. "http: TLS handshake error" from scanners and junk clients); those
-// are only useful when debugging, so drop them by default.
+// silent unless Verbose (-v) is enabled. net/http logs noisy internals through
+// it (e.g. "http: TLS handshake error" from scanners and junk clients); those
+// are only useful when watching connection noise, so drop them by default.
 func ServerErrorLog() *log.Logger {
-	if Debug {
+	if Verbose {
 		return log.New(os.Stderr, "", log.LstdFlags)
 	}
 	return log.New(io.Discard, "", 0)

@@ -30,10 +30,10 @@ import (
 // verboseLog prints connection/session noise — incoming connections, NTLM
 // Type 1 polls, and per-auth failures when no target/challenge is available
 // (e.g. every /wpad.dat poll after the target was already relayed) — only
-// when -debug is enabled. Outcome lines (Type 3 captures, relay results,
-// hashes, attack output) stay unconditional.
+// when -v is enabled. Outcome lines (Type 3 captures, relay results, hashes,
+// attack output) stay unconditional, and -debug protocol detail is separate.
 func verboseLog(format string, v ...interface{}) {
-	if build.Debug {
+	if build.Verbose {
 		log.Printf(format, v...)
 	}
 }

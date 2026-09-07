@@ -103,7 +103,8 @@ func main() {
 	randomTarget := flag.Bool("ra", false, "Randomize target selection")
 
 	// General
-	debug := flag.Bool("debug", false, "Enable debug output")
+	debug := flag.Bool("debug", false, "Enable debug output ([D] protocol detail)")
+	verbose := flag.Bool("v", false, "Verbose: connection/attempt noise (incoming connections, per-auth failures, TLS handshake errors)")
 	lootDir := flag.String("loot", ".", "Loot directory (secretsdump/samdump/LDAP/ADCS result files)")
 	outputFile := flag.String("of", "", "Output file for hashes")
 	ipv6 := flag.Bool("6", false, "IPv6 support")
@@ -140,6 +141,10 @@ func main() {
 
 	if *debug {
 		build.Debug = true
+	}
+
+	if *verbose {
+		build.Verbose = true
 	}
 
 	cfg := &relay.Config{
