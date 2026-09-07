@@ -86,7 +86,8 @@ func (s *HTTPSRelayServer) Start(resultChan chan<- AuthResult) error {
 	s.listener = tlsLn
 
 	s.server = &http.Server{
-		Handler: s.httpServer, // reuse HTTPRelayServer's ServeHTTP
+		Handler:  s.httpServer, // reuse HTTPRelayServer's ServeHTTP
+		ErrorLog: build.ServerErrorLog(),
 		ConnState: func(conn net.Conn, state http.ConnState) {
 			if state == http.StateClosed || state == http.StateHijacked {
 				s.httpServer.mu.Lock()

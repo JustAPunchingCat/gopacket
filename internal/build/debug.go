@@ -16,6 +16,8 @@ package build
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"time"
 )
@@ -38,4 +40,15 @@ func DebugLog(format string, v ...interface{}) {
 	if Debug {
 		Log("[D] "+format, v...)
 	}
+}
+
+// ServerErrorLog returns an *log.Logger for http.Server.ErrorLog that is
+// silent unless Debug is enabled. net/http logs noisy internals through it
+// (e.g. "http: TLS handshake error" from scanners and junk clients); those
+// are only useful when debugging, so drop them by default.
+func ServerErrorLog() *log.Logger {
+	if Debug {
+		return log.New(os.Stderr, "", log.LstdFlags)
+	}
+	return log.New(io.Discard, "", 0)
 }

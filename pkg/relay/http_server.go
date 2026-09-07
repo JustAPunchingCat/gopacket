@@ -73,6 +73,9 @@ func (s *HTTPRelayServer) Start(resultChan chan<- AuthResult) error {
 
 	s.server = &http.Server{
 		Handler: s,
+		// net/http logs TLS/protocol noise (e.g. "TLS handshake error")
+		// through ErrorLog — route it through -debug instead of stderr.
+		ErrorLog: build.ServerErrorLog(),
 		// ConnState callback to clean up sessions when connections close
 		ConnState: func(conn net.Conn, state http.ConnState) {
 			if state == http.StateClosed || state == http.StateHijacked {

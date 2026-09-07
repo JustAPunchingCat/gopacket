@@ -20,6 +20,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+
+	"github.com/mandiant/gopacket/internal/build"
 )
 
 // APIServer exposes relay session data as a REST API, matching Impacket's
@@ -51,7 +53,7 @@ func (a *APIServer) Start() error {
 	mux.HandleFunc("/", a.handleRoot)
 	mux.HandleFunc("/ntlmrelayx/api/v1.0/relays", a.handleRelays)
 
-	a.server = &http.Server{Handler: mux}
+	a.server = &http.Server{Handler: mux, ErrorLog: build.ServerErrorLog()}
 
 	log.Printf("[*] REST API started on %s", a.addr)
 	go a.server.Serve(listener)
