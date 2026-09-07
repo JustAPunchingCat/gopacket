@@ -326,7 +326,7 @@ func handleAuth(auth AuthResult, cfg *Config) {
 	// Relay Type 1 → get Type 2
 	type2, err := client.SendNegotiate(type1)
 	if err != nil {
-		log.Printf("[-] Failed to relay Type 1 to target: %v", err)
+		verboseLog("[-] Failed to relay Type 1 to target: %v", err)
 		close(auth.Type2Ch)
 		return
 	}
