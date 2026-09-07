@@ -104,7 +104,7 @@ func main() {
 
 	// General
 	debug := flag.Bool("debug", false, "Enable debug output")
-	lootDir := flag.String("loot", ".", "Loot directory")
+	lootDir := flag.String("loot", ".", "Loot directory (secretsdump/samdump/LDAP/ADCS result files)")
 	outputFile := flag.String("of", "", "Output file for hashes")
 	ipv6 := flag.Bool("6", false, "IPv6 support")
 	enumAdmins := flag.Bool("enum-local-admins", false, "Enumerate local admins on failed relay")
