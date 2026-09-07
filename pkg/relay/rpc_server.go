@@ -183,7 +183,7 @@ func (s *RPCRelayServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
-	log.Printf("[*] RPC: Incoming connection from %s", remoteAddr)
+	verboseLog("[*] RPC: Incoming connection from %s", remoteAddr)
 
 	// State tracking
 	var boundUUID [16]byte // the abstract syntax UUID that was accepted
@@ -333,7 +333,7 @@ func (s *RPCRelayServer) handleConnection(conn net.Conn) {
 					// Wait for Type 2 challenge
 					type2, ok := <-auth.Type2Ch
 					if !ok || type2 == nil {
-						log.Printf("[-] RPC relay: no challenge received for %s", remoteAddr)
+						verboseLog("[-] RPC relay: no challenge received for %s", remoteAddr)
 						return
 					}
 

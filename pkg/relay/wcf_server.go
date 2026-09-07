@@ -92,7 +92,7 @@ func (s *WCFRelayServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
-	log.Printf("[*] WCF: Incoming connection from %s", remoteAddr)
+	verboseLog("[*] WCF: Incoming connection from %s", remoteAddr)
 
 	// === MC-NMF Preamble Phase ===
 
@@ -296,7 +296,7 @@ func (s *WCFRelayServer) handleConnection(conn net.Conn) {
 	// Wait for Type 2 challenge from orchestrator
 	type2, ok := <-auth.Type2Ch
 	if !ok || type2 == nil {
-		log.Printf("[-] WCF relay: no challenge received for %s", remoteAddr)
+		verboseLog("[-] WCF relay: no challenge received for %s", remoteAddr)
 		return
 	}
 

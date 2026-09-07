@@ -76,7 +76,7 @@ func (s *SMBRelayServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
-	log.Printf("[*] Incoming connection from %s", remoteAddr)
+	verboseLog("[*] Incoming connection from %s", remoteAddr)
 
 	// Generate a random server GUID
 	var serverGUID [16]byte
@@ -247,7 +247,7 @@ func (s *SMBRelayServer) handleConnection(conn net.Conn) {
 	// Step 3: Wait for Type 2 challenge from orchestrator
 	type2, ok := <-auth.Type2Ch
 	if !ok || type2 == nil {
-		log.Printf("[-] Relay failed for %s: no challenge received", remoteAddr)
+		verboseLog("[-] Relay failed for %s: no challenge received", remoteAddr)
 		return
 	}
 

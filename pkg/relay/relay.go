@@ -266,7 +266,7 @@ func handleAuth(auth AuthResult, cfg *Config) {
 	// Use identity from previous auth if available, otherwise empty for initial selection
 	target := cfg.GetTargetForIdentity("")
 	if target == nil {
-		log.Printf("[-] No target available")
+		verboseLog("[-] No target available")
 		close(auth.Type2Ch)
 		return
 	}

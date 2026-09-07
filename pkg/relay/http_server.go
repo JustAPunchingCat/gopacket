@@ -316,7 +316,7 @@ func (s *HTTPRelayServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // handleType1 processes an NTLM Type 1 negotiate from the HTTP client.
 func (s *HTTPRelayServer) handleType1(w http.ResponseWriter, r *http.Request, ntlmType1 []byte, remoteAddr string) {
-	log.Printf("[*] HTTP: NTLM Type 1 from %s (%s %s)", remoteAddr, r.Method, r.URL.Path)
+	verboseLog("[*] HTTP: NTLM Type 1 from %s (%s %s)", remoteAddr, r.Method, r.URL.Path)
 
 	// Create auth result and push to orchestrator
 	auth := AuthResult{
@@ -338,7 +338,7 @@ func (s *HTTPRelayServer) handleType1(w http.ResponseWriter, r *http.Request, nt
 	// Wait for Type 2 challenge from orchestrator
 	type2, ok := <-auth.Type2Ch
 	if !ok || type2 == nil {
-		log.Printf("[-] HTTP relay: no challenge received for %s", remoteAddr)
+		verboseLog("[-] HTTP relay: no challenge received for %s", remoteAddr)
 		w.WriteHeader(503)
 		return
 	}

@@ -91,7 +91,7 @@ func (s *RAWRelayServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
-	log.Printf("[*] RAW: Incoming connection from %s", remoteAddr)
+	verboseLog("[*] RAW: Incoming connection from %s", remoteAddr)
 
 	// Step 1: Receive NTLM Type 1 (length-prefixed)
 	lenBuf, err := recvAll(conn, 2)
@@ -136,7 +136,7 @@ func (s *RAWRelayServer) handleConnection(conn net.Conn) {
 	// Step 2: Wait for Type 2 challenge from orchestrator
 	type2, ok := <-auth.Type2Ch
 	if !ok || type2 == nil {
-		log.Printf("[-] RAW relay: no challenge received for %s", remoteAddr)
+		verboseLog("[-] RAW relay: no challenge received for %s", remoteAddr)
 		return
 	}
 
