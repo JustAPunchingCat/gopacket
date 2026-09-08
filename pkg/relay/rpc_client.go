@@ -49,6 +49,7 @@ const (
 type RPCRelaySession struct {
 	Client *dcerpc.Client
 	Mode   string // "TSCH" or "ICPR"
+	Target string // relay target host:port (for loot file naming)
 }
 
 // RPCRelayClient relays NTLM authentication over DCE/RPC BIND/AUTH3.
@@ -214,6 +215,7 @@ func (c *RPCRelayClient) GetSession() interface{} {
 	return &RPCRelaySession{
 		Client: c.dceClient,
 		Mode:   c.rpcMode,
+		Target: c.targetAddr,
 	}
 }
 

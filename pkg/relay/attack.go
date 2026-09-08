@@ -394,7 +394,9 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 		sc.CloseServiceHandle(deleteHandle)
 	}
 
-	log.Printf("[+] Command executed: %s", cfg.Command)
+	openCommandLoot(cfg, hostFromAddr(client.TargetAddr), "smbexec", cfg.Command)
+	commandLootf("[+] Command executed: %s", cfg.Command)
+	closeCommandLoot()
 
 	return nil
 }

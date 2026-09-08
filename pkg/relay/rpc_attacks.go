@@ -98,7 +98,9 @@ func (a *RPCTschExecAttack) Run(session interface{}, config *Config) error {
 		log.Printf("[*] Task %s deleted", actualPath)
 	}
 
-	log.Printf("[+] Command executed via Task Scheduler (RPC): %s", config.Command)
+	openCommandLoot(config, hostFromAddr(rpcSession.Target), "rpctschexec", config.Command)
+	commandLootf("[+] Command executed via Task Scheduler (RPC): %s", config.Command)
+	closeCommandLoot()
 
 	return nil
 }

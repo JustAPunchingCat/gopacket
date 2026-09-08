@@ -65,8 +65,8 @@ func openDumpLoot(cfg *Config, host, attack string) {
 		return
 	}
 
-	fmt.Fprintf(f, "# %s dump of %s (%s)\n\n",
-		attack, host, time.Now().Format(time.RFC3339))
+	fmt.Fprintf(f, "# %s dump of %s by %s (%s)\n\n",
+		attack, host, relayedIdentity(cfg), time.Now().Format(time.RFC3339))
 
 	dumpMu.Lock()
 	dumpFile = f
@@ -98,6 +98,22 @@ func dumpResultf(format string, v ...interface{}) {
 	}
 }
 
+// relayedIdentity returns "DOMAIN\user" from the last relayed Type3 (set in
+// handleAuth before attacks run), or "unknown" if not yet available.
+func relayedIdentity(cfg *Config) string {
+	if cfg == nil {
+		return "unknown"
+	}
+	u := cfg.relayedUser
+	if u == "" {
+		return "unknown"
+	}
+	if cfg.relayedDomain == "" {
+		return u
+	}
+	return cfg.relayedDomain + "\\" + u
+}
+
 // hostFromAddr extracts the host part of a host:port address for loot file
 // naming (empty-safe, filename-safe).
 func hostFromAddr(addr string) string {
@@ -113,4 +129,65 @@ func hostFromAddr(addr string) string {
 // sanitizeFilePart makes a host/name safe to use in a filename.
 func sanitizeFilePart(s string) string {
 	return strings.NewReplacer(":", "_", "/", "_", "\\", "_", "*", "_").Replace(s)
+}
+
+// Command result loot sink for -c exec attacks: on success each run appends a
+// header (identity, time, command) plus its output to <loot>/<attack>_<host>.txt,
+// mirroring the dump sink used by secretsdump/samdump.
+var (
+	cmdMu   sync.Mutex
+	cmdFile *os.File
+)
+
+// openCommandLoot opens <lootdir>/<attack>_<host>.txt in append mode and makes
+// it the active sink for commandLootf. If the file cannot be opened, logs a
+// warning and continues console-only.
+func openCommandLoot(cfg *Config, host, attack, command string) {
+	dir := cfg.LootDir
+	if dir == "" {
+		dir = "."
+	}
+
+	name := filepath.Join(dir, sanitizeFilePart(attack)+"_"+sanitizeFilePart(host)+".txt")
+
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("[-] Failed to open loot file %s: %v", name, err)
+		return
+	}
+
+	ts := time.Now().Format(time.RFC3339)
+	fmt.Fprintf(f, "\n# %s by %s on %s (%s)\n", attack, relayedIdentity(cfg), host, ts)
+	if command != "" {
+		fmt.Fprintf(f, "# command: %s\n", command)
+	}
+
+	cmdMu.Lock()
+	cmdFile = f
+	cmdMu.Unlock()
+
+	log.Printf("[*] Appending %s result to %s", attack, name)
+}
+
+// closeCommandLoot closes the active command loot file, if any.
+func closeCommandLoot() {
+	cmdMu.Lock()
+	defer cmdMu.Unlock()
+	if cmdFile != nil {
+		cmdFile.Close()
+		cmdFile = nil
+	}
+}
+
+// commandLootf appends one result line to the active command loot file (if any)
+// and echoes it to the console.
+func commandLootf(format string, v ...interface{}) {
+	line := fmt.Sprintf(format, v...)
+	log.Print(line)
+
+	cmdMu.Lock()
+	defer cmdMu.Unlock()
+	if cmdFile != nil {
+		fmt.Fprintln(cmdFile, line)
+	}
 }

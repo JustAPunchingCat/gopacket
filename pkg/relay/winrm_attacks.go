@@ -87,11 +87,14 @@ func (a *WinRMExecAttack) Run(session interface{}, config *Config) error {
 	}
 
 	output := decodeOutputStream(outResp)
+
+	openCommandLoot(config, hostFromAddr(client.targetAddr), "winrmexec", command)
 	if output != "" {
-		log.Printf("[+] Command output:\n%s", output)
+		commandLootf("[+] Command output:\n%s", output)
 	} else {
-		log.Printf("[*] Command executed (no output)")
+		commandLootf("[*] Command executed (no output)")
 	}
+	closeCommandLoot()
 
 	// Step 4: Delete shell
 	deleteShell(client, toAddr, shellID)

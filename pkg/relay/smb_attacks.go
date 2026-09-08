@@ -215,7 +215,9 @@ func tschExecAttack(client *SMBRelayClient, cfg *Config) error {
 		log.Printf("[*] Task %s deleted", actualPath)
 	}
 
-	log.Printf("[+] Command executed via Task Scheduler: %s", cfg.Command)
+	openCommandLoot(cfg, hostFromAddr(client.TargetAddr), "tschexec", cfg.Command)
+	commandLootf("[+] Command executed via Task Scheduler: %s", cfg.Command)
+	closeCommandLoot()
 
 	return nil
 }
