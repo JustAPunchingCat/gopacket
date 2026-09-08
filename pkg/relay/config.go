@@ -438,12 +438,12 @@ func (c *Config) RegisterAttack(target *TargetEntry, identity string, success bo
 	}
 }
 
-// isTargetDone returns true if any user has attacked this target (for --no-multirelay).
+// isTargetDone returns true if a target was successfully relayed/attacked.
+// Failed relays do NOT retire a target: a limited user's failed relay should
+// not burn the target for a later privileged user (identity is only known
+// after relay, and -keep-relaying stays off by default).
 func (c *Config) isTargetDone(targetKey string) bool {
 	if len(c.finishedAttacks[targetKey]) > 0 {
-		return true
-	}
-	if len(c.failedAttacks[targetKey]) > 0 {
 		return true
 	}
 	return false
