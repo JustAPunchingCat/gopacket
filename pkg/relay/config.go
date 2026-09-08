@@ -111,6 +111,10 @@ type Config struct {
 	// then stop the identity everywhere (lockout guard). Targets themselves are
 	// only retired by a real success.
 	MaxFails int
+	// WaitUser restricts relaying to a single identity (e.g. "LAB\administrator").
+	// Other identities are declined before any Type 3 reaches a target (hashes
+	// still captured) and targets stay unconsumed until the wanted user appears.
+	WaitUser string
 
 	// General
 	Debug       bool
@@ -493,6 +497,44 @@ func (c *Config) RelayFailureCount(identity string) int {
 		}
 	}
 	return n
+}
+
+// IdentityWanted reports whether identity should be relayed under the
+// -wait-user restriction. Accepts exact DOMAIN\user, username-only, and UPN
+// forms of the same account; two explicit but different domains never match.
+func (c *Config) IdentityWanted(identity string) bool {
+	if c.WaitUser == "" {
+		return true
+	}
+
+	identity = strings.ToUpper(identity)
+	want := strings.ToUpper(strings.TrimSpace(c.WaitUser))
+	if identity == want {
+		return true
+	}
+
+	split := func(s string) (domain, user string) {
+		if i := strings.IndexByte(s, '\\'); i >= 0 {
+			return s[:i], s[i+1:]
+		}
+		return "", s
+	}
+	wantDomain, wantUser := split(want)
+	idDomain, idUser := split(identity)
+
+	// Both explicitly name a domain and they differ -> not the same account.
+	if idDomain != "" && wantDomain != "" && idDomain != wantDomain {
+		return false
+	}
+
+	// Compare usernames, tolerating UPN (user@domain) in either side.
+	if i := strings.IndexByte(idUser, '@'); i >= 0 {
+		idUser = idUser[:i]
+	}
+	if i := strings.IndexByte(wantUser, '@'); i >= 0 {
+		wantUser = wantUser[:i]
+	}
+	return idUser == wantUser
 }
 
 // GetOriginalTargets returns a copy of the original targets list (thread-safe).
