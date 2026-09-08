@@ -105,6 +105,10 @@ type Config struct {
 	KeepRelaying bool
 	NoMultiRelay bool
 	RandomTarget bool
+	// TryAllTargets lets an identity whose relay/attack failed against one
+	// target attempt each remaining target once. Default (false): the first
+	// auth or attack failure stops that identity everywhere — lockout guard.
+	TryAllTargets bool
 
 	// General
 	Debug       bool
@@ -470,6 +474,22 @@ func (c *Config) WasRelayTried(targetURL, identity string) bool {
 
 	identity = strings.ToUpper(identity)
 	return c.failedAttacks[targetURL] != nil && c.failedAttacks[targetURL][identity]
+}
+
+// HasRelayFailed reports whether identity already failed a relay or attack
+// against any target this run. Default mode stops the identity there — trying
+// the remaining targets would only add more failed logons for the account.
+func (c *Config) HasRelayFailed(identity string) bool {
+	c.targetMu.Lock()
+	defer c.targetMu.Unlock()
+
+	identity = strings.ToUpper(identity)
+	for _, byIdentity := range c.failedAttacks {
+		if byIdentity[identity] {
+			return true
+		}
+	}
+	return false
 }
 
 // GetOriginalTargets returns a copy of the original targets list (thread-safe).

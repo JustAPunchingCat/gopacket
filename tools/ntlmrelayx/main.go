@@ -101,6 +101,7 @@ func main() {
 	keepRelaying := flag.Bool("keep-relaying", false, "Keep relaying after success")
 	noMultiRelay := flag.Bool("no-multirelay", false, "Disable multi-host relay")
 	randomTarget := flag.Bool("ra", false, "Randomize target selection")
+	tryAllTargets := flag.Bool("try-all-targets", false, "On auth/attack failure, let the identity try each remaining target once (default: stop the identity after its first failure — lockout guard)")
 
 	// General
 	debug := flag.Bool("debug", false, "Enable debug output ([D] protocol detail)")
@@ -215,9 +216,10 @@ func main() {
 		APIPort:      *httpAPIPort,
 
 		// Relay behavior
-		KeepRelaying: *keepRelaying,
-		NoMultiRelay: *noMultiRelay,
-		RandomTarget: *randomTarget,
+		KeepRelaying:  *keepRelaying,
+		NoMultiRelay:  *noMultiRelay,
+		RandomTarget:  *randomTarget,
+		TryAllTargets: *tryAllTargets,
 
 		// General
 		Debug:      *debug,

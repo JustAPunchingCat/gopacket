@@ -369,12 +369,13 @@ func handleAuth(auth AuthResult, cfg *Config) {
 	// Relay Type 3 to target
 	identity := fmt.Sprintf("%s\\%s", domain, user)
 
-	// Lockout guard: if this identity already failed a relay against this
-	// target, do not push another Type 3 into it (each attempt is one failed
-	// logon). Decline the victim instead; the target stays available for
-	// other identities.
-	if cfg.WasRelayTried(target.URL(), identity) {
-		verboseLog("[-] Skipping relay for %s → %s: already tried and failed this run", identity, target.URL())
+	// Lockout guard: once this identity failed a relay/attack this run, do not
+	// push another Type 3 into any target (each attempt is one failed logon for
+	// the account). Default stops the identity globally; -try-all-targets lets
+	// it try each remaining target once (only the exact tried pair is skipped).
+	if cfg.WasRelayTried(target.URL(), identity) ||
+		(!cfg.TryAllTargets && cfg.HasRelayFailed(identity)) {
+		verboseLog("[-] Skipping relay for %s → %s: identity already failed this run (lockout guard)", identity, target.URL())
 		auth.ResultCh <- false
 		return
 	}
@@ -476,6 +477,11 @@ func handleAuth(auth AuthResult, cfg *Config) {
 
 	if err := attackMod.Run(session, cfg); err != nil {
 		log.Printf("[-] Attack '%s' failed: %v", attackMod.Name(), err)
+
+		// Register the failed attempt: default mode stops this identity from
+		// trying the remaining targets (lockout guard); the target itself stays
+		// available for other identities.
+		cfg.RegisterAttack(target, identity, false)
 
 		// Impacket behavior: on access denied for SMB attacks, fall back to enum-local-admins
 		if cfg.EnumAdmins && target.Scheme == "smb" &&
