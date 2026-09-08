@@ -360,12 +360,13 @@ func handleAuth(auth AuthResult, cfg *Config) {
 
 	// Lockout guard: once this identity failed a relay/attack this run, do not
 	// push another Type 3 into any target (each attempt is one failed logon for
-	// the account). Default stops the identity globally; -try-all-targets lets
-	// it try each remaining target once (only the exact tried pair is skipped).
+	// the account). Default stops the identity globally; -impacket-style (the
+	// stock Impacket default) lets it try each remaining target once, only the
+	// exact tried pair is skipped.
 	// Declined sessions return here, before any hash logging, so a stopped
 	// identity's re-polls stay silent instead of re-printing Type 3/hash lines.
 	if cfg.WasRelayTried(target.URL(), identity) ||
-		(!cfg.TryAllTargets && cfg.HasRelayFailed(identity)) {
+		(!cfg.ImpacketStyle && cfg.HasRelayFailed(identity)) {
 		verboseLog("[-] Skipping relay for %s → %s: identity already failed this run (lockout guard)", identity, target.URL())
 		auth.ResultCh <- false
 		return

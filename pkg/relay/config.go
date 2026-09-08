@@ -105,10 +105,11 @@ type Config struct {
 	KeepRelaying bool
 	NoMultiRelay bool
 	RandomTarget bool
-	// TryAllTargets lets an identity whose relay/attack failed against one
-	// target attempt each remaining target once. Default (false): the first
-	// auth or attack failure stops that identity everywhere — lockout guard.
-	TryAllTargets bool
+	// ImpacketStyle enables the insecure default of stock Impacket: an identity
+	// whose relay/attack failed against one target may attempt each remaining
+	// target once. Default (false) is the safe lockout guard: the first auth or
+	// attack failure stops that identity everywhere.
+	ImpacketStyle bool
 
 	// General
 	Debug       bool
