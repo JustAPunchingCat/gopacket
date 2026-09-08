@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -500,8 +501,11 @@ func (c *Config) RelayFailureCount(identity string) int {
 }
 
 // IdentityWanted reports whether identity should be relayed under the
-// -wait-user restriction. Accepts exact DOMAIN\user, username-only, and UPN
-// forms of the same account; two explicit but different domains never match.
+// -wait-user restriction. The wanted pattern may contain '*'/'?' wildcards in
+// the domain and/or username parts (e.g. "LAB\administrator", "admin*",
+// "Lab\*", "*\admin*"); plain usernames act as prefixes ("admin" matches
+// "LAB\administrator"). UPN forms ("\user@domain") match by username with the
+// UPN domain checked against the wanted domain (NetBIOS label tolerated).
 func (c *Config) IdentityWanted(identity string) bool {
 	if c.WaitUser == "" {
 		return true
@@ -513,7 +517,7 @@ func (c *Config) IdentityWanted(identity string) bool {
 		return true
 	}
 
-	split := func(s string) (domain, user string) {
+	split := func(s string) (string, string) {
 		if i := strings.IndexByte(s, '\\'); i >= 0 {
 			return s[:i], s[i+1:]
 		}
@@ -522,19 +526,49 @@ func (c *Config) IdentityWanted(identity string) bool {
 	wantDomain, wantUser := split(want)
 	idDomain, idUser := split(identity)
 
-	// Both explicitly name a domain and they differ -> not the same account.
-	if idDomain != "" && wantDomain != "" && idDomain != wantDomain {
-		return false
-	}
-
-	// Compare usernames, tolerating UPN (user@domain) in either side.
+	// UPN-form identity ("\user@domain"): the domain side lives in the user
+	// part, so pull it out before username comparison.
+	upnDomain := ""
 	if i := strings.IndexByte(idUser, '@'); i >= 0 {
+		upnDomain = idUser[i+1:]
 		idUser = idUser[:i]
 	}
+
+	// A non-empty wanted domain (exact or wildcard) must match.
+	if wantDomain != "" {
+		matched := false
+		if idDomain != "" {
+			matched = globMatch(wantDomain, idDomain)
+		} else if upnDomain != "" {
+			matched = globMatch(wantDomain, upnDomain)
+			if !matched {
+				// "LAB\*" should also accept "user@LAB.corp" (NetBIOS label).
+				if i := strings.IndexByte(upnDomain, '.'); i >= 0 {
+					matched = globMatch(wantDomain, upnDomain[:i])
+				}
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	// Strip a UPN suffix from the wanted side too, then glob the username.
 	if i := strings.IndexByte(wantUser, '@'); i >= 0 {
 		wantUser = wantUser[:i]
 	}
-	return idUser == wantUser
+	// Plain (no-wildcard) usernames act as prefixes: "admin" also matches
+	// "administrator" (e.g. LAB\administrator).
+	if !strings.ContainsAny(wantUser, "*?") {
+		wantUser += "*"
+	}
+	return globMatch(wantUser, idUser)
+}
+
+// globMatch reports whether name matches pattern using '*'/'?' wildcards.
+func globMatch(pattern, name string) bool {
+	ok, err := path.Match(pattern, name)
+	return err == nil && ok
 }
 
 // GetOriginalTargets returns a copy of the original targets list (thread-safe).

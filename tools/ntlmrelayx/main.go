@@ -102,7 +102,7 @@ func main() {
 	noMultiRelay := flag.Bool("no-multirelay", false, "Disable multi-host relay")
 	randomTarget := flag.Bool("ra", false, "Randomize target selection")
 	maxFails := flag.Int("max-fails", 3, "Stop an identity after N failed relay/attack attempts (distinct targets). 0 = unlimited (stock Impacket spread)")
-	waitUser := flag.String("wait-user", "", "Only relay authentications from this identity (e.g. LAB\\administrator); other identities are declined but hashes are still captured")
+	waitUser := flag.String("wait-user", "", "Only relay authentications matching this identity/pattern (e.g. LAB\\administrator, admin*, Lab\\*; plain names match as prefix - admin matches LAB\\administrator); other identities are declined but hashes are still captured")
 
 	// General
 	debug := flag.Bool("debug", false, "Enable debug output ([D] protocol detail)")
