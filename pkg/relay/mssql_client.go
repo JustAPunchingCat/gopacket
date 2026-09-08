@@ -205,6 +205,10 @@ func mssqlQueryAttack(client *tds.Client, cfg *Config) error {
 		}
 	}
 
+	// mssqlErr collects the first query failure so the attack returns an error
+	// and the caller (handleAuth) stops this identity from trying more targets.
+	var mssqlErr error
+
 	for _, query := range cfg.Queries {
 		query = strings.TrimSpace(query)
 		if query == "" {
@@ -216,6 +220,9 @@ func mssqlQueryAttack(client *tds.Client, cfg *Config) error {
 		rows, err := client.SQLQuery(query)
 		if err != nil {
 			log.Printf("[-] MSSQL query error: %v", err)
+			if mssqlErr == nil {
+				mssqlErr = fmt.Errorf("query %q: %v", query, err)
+			}
 			continue
 		}
 
@@ -234,5 +241,5 @@ func mssqlQueryAttack(client *tds.Client, cfg *Config) error {
 		}
 	}
 
-	return nil
+	return mssqlErr
 }
