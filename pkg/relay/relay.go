@@ -308,7 +308,7 @@ func handleAuth(auth AuthResult, cfg *Config) {
 
 	// Connect to target
 	if err := client.InitConnection(); err != nil {
-		log.Printf("[-] Failed to connect to target %s: %v", target.URL(), err)
+		verboseLog("[-] Failed to connect to target %s: %v", target.URL(), err)
 		close(auth.Type2Ch)
 		return
 	}
