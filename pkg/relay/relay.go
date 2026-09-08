@@ -358,15 +358,15 @@ func handleAuth(auth AuthResult, cfg *Config) {
 	domain, user := extractNTLMType3Info(type3)
 	identity := fmt.Sprintf("%s\\%s", domain, user)
 
-	// Lockout guard: once this identity failed a relay/attack this run, do not
-	// push another Type 3 into any target (each attempt is one failed logon for
-	// the account). Default stops the identity globally; -impacket-style (the
-	// stock Impacket default) lets it try each remaining target once, only the
-	// exact tried pair is skipped.
+	// Lockout guard: once this identity failed relay/attack MaxFails times
+	// against distinct targets this run, do not push another Type 3 into any
+	// target (each attempt is one failed logon for the account). Repeats of the
+	// exact failed (identity,target) pair are always skipped; MaxFails=0 means
+	// unlimited across targets (stock Impacket spread).
 	// Declined sessions return here, before any hash logging, so a stopped
 	// identity's re-polls stay silent instead of re-printing Type 3/hash lines.
 	if cfg.WasRelayTried(target.URL(), identity) ||
-		(!cfg.ImpacketStyle && cfg.HasRelayFailed(identity)) {
+		(cfg.MaxFails > 0 && cfg.RelayFailureCount(identity) >= cfg.MaxFails) {
 		verboseLog("[-] Skipping relay for %s → %s: identity already failed this run (lockout guard)", identity, target.URL())
 		auth.ResultCh <- false
 		return

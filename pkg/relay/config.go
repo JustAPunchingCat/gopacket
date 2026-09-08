@@ -105,11 +105,12 @@ type Config struct {
 	KeepRelaying bool
 	NoMultiRelay bool
 	RandomTarget bool
-	// ImpacketStyle enables the insecure default of stock Impacket: an identity
-	// whose relay/attack failed against one target may attempt each remaining
-	// target once. Default (false) is the safe lockout guard: the first auth or
-	// attack failure stops that identity everywhere.
-	ImpacketStyle bool
+	// MaxFails stops an identity after N failed relay/attack attempts against
+	// distinct targets (per exact identity string, e.g. "LAB\user"). 0 means
+	// unlimited — the stock Impacket spread. Default 3: tolerate a few rejects,
+	// then stop the identity everywhere (lockout guard). Targets themselves are
+	// only retired by a real success.
+	MaxFails int
 
 	// General
 	Debug       bool
@@ -477,20 +478,21 @@ func (c *Config) WasRelayTried(targetURL, identity string) bool {
 	return c.failedAttacks[targetURL] != nil && c.failedAttacks[targetURL][identity]
 }
 
-// HasRelayFailed reports whether identity already failed a relay or attack
-// against any target this run. Default mode stops the identity there — trying
-// the remaining targets would only add more failed logons for the account.
-func (c *Config) HasRelayFailed(identity string) bool {
+// RelayFailureCount returns how many distinct targets identity failed a
+// relay/attack against this run. The identity is the exact parsed Type3 string
+// (e.g. "LAB\user" or "\user@domain.tld" for UPN) — no cross-format matching.
+func (c *Config) RelayFailureCount(identity string) int {
 	c.targetMu.Lock()
 	defer c.targetMu.Unlock()
 
 	identity = strings.ToUpper(identity)
+	n := 0
 	for _, byIdentity := range c.failedAttacks {
 		if byIdentity[identity] {
-			return true
+			n++
 		}
 	}
-	return false
+	return n
 }
 
 // GetOriginalTargets returns a copy of the original targets list (thread-safe).
