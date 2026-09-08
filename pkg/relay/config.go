@@ -460,6 +460,18 @@ func (c *Config) isAttackedBy(targetKey, identity string) bool {
 	return false
 }
 
+// WasRelayTried reports whether identity already failed a relay against
+// targetURL earlier this run. That (creds,target) pair must not be pushed into
+// the target again: each retry is another failed logon for the account and can
+// trip lockout. The target itself stays available for other identities.
+func (c *Config) WasRelayTried(targetURL, identity string) bool {
+	c.targetMu.Lock()
+	defer c.targetMu.Unlock()
+
+	identity = strings.ToUpper(identity)
+	return c.failedAttacks[targetURL] != nil && c.failedAttacks[targetURL][identity]
+}
+
 // GetOriginalTargets returns a copy of the original targets list (thread-safe).
 func (c *Config) GetOriginalTargets() []TargetEntry {
 	c.targetMu.Lock()

