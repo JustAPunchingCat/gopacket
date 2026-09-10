@@ -31,13 +31,16 @@ type WinRMExecAttack struct{}
 
 func (a *WinRMExecAttack) Name() string { return "winrmexec" }
 
-func (a *WinRMExecAttack) Run(session interface{}, config *Config) error {
+func (a *WinRMExecAttack) Run(session interface{}, config *Config) (err error) {
 	client, ok := session.(*WinRMRelayClient)
 	if !ok {
 		return fmt.Errorf("winrmexec attack requires WinRM session (got %T)", session)
 	}
 
+	// Buffered run log, flushed on exit (success or post-auth failure).
+	host := hostFromAddr(client.targetAddr)
 	rl := &runLog{}
+	defer func() { rl.Flush(config, host, "winrmexec", config.Command, err) }()
 
 	command := config.Command
 	if command == "" {
@@ -95,7 +98,6 @@ func (a *WinRMExecAttack) Run(session interface{}, config *Config) error {
 	} else {
 		rl.Printf("[*] Command executed (no output)")
 	}
-	rl.Flush(config, hostFromAddr(client.targetAddr), "winrmexec", command)
 
 	// Step 4: Delete shell
 	deleteShell(client, toAddr, shellID)

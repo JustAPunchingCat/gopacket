@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mandiant/gopacket/internal/build"
 	"github.com/mandiant/gopacket/pkg/relay"
@@ -107,6 +108,7 @@ func main() {
 	// General
 	debug := flag.Bool("debug", false, "Enable debug output ([D] protocol detail)")
 	verbose := flag.Bool("v", false, "Verbose: connection/attempt noise (incoming connections, per-auth failures, TLS handshake errors)")
+	cmdTimeout := flag.Duration("cmd-timeout", 10*time.Second, "How long to wait for an exec attack's command completion marker (e.g. 30s, 2m)")
 	lootDir := flag.String("loot", ".", "Loot directory (secretsdump/samdump/LDAP/ADCS result files)")
 	outputFile := flag.String("of", "", "Output file for hashes")
 	ipv6 := flag.Bool("6", false, "IPv6 support")
@@ -229,6 +231,7 @@ func main() {
 		OutputFile: *outputFile,
 		IPv6:       *ipv6,
 		EnumAdmins: *enumAdmins,
+		CmdTimeout: *cmdTimeout,
 
 		// WPAD
 		WPADHost:    *wpadHost,

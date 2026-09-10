@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Config holds the full relay configuration.
@@ -124,6 +125,9 @@ type Config struct {
 	IPv6        bool
 	Interactive bool
 	EnumAdmins  bool
+	// CmdTimeout is how long exec attacks wait for a command's completion
+	// marker on the target before reporting failure.
+	CmdTimeout time.Duration
 
 	// WPAD
 	WPADHost    string

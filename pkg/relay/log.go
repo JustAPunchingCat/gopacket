@@ -162,9 +162,18 @@ func (r *runLog) Printf(format string, v ...interface{}) {
 	r.lines = append(r.lines, line)
 }
 
-// Flush appends the buffered run (header + every recorded line) to
-// <lootdir>/<attack>_<host>.txt.
-func (r *runLog) Flush(cfg *Config, host, attack, command string) {
+// Flush appends the buffered run (header + every recorded line + failure
+// reason when runErr != nil) to <lootdir>/<attack>_<host>.txt. Called via defer
+// so both successful and failed runs leave a traceable file.
+//
+// Runs that never got a session are skipped: if no line was recorded, the
+// failure happened before/at authentication (relay, tree connect, bind) and
+// nothing is written — only post-auth attempts produce a log file.
+func (r *runLog) Flush(cfg *Config, host, attack, command string, runErr error) {
+	if len(r.lines) == 0 {
+		return
+	}
+
 	dir := cfg.LootDir
 	if dir == "" {
 		dir = "."
@@ -187,6 +196,9 @@ func (r *runLog) Flush(cfg *Config, host, attack, command string) {
 	for _, line := range r.lines {
 		fmt.Fprintln(f, line)
 	}
+	if runErr != nil {
+		fmt.Fprintf(f, "[-] run failed: %v\n", runErr)
+	}
 
-	log.Printf("[*] Appended %s result to %s", attack, name)
+	log.Printf("[*] Appended %s run to %s", attack, name)
 }

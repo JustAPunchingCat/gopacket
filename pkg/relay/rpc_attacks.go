@@ -43,7 +43,7 @@ type RPCTschExecAttack struct{}
 
 func (a *RPCTschExecAttack) Name() string { return "rpctschexec" }
 
-func (a *RPCTschExecAttack) Run(session interface{}, config *Config) error {
+func (a *RPCTschExecAttack) Run(session interface{}, config *Config) (err error) {
 	rpcSession, ok := session.(*RPCRelaySession)
 	if !ok {
 		return fmt.Errorf("rpctschexec attack requires RPC session (got %T)", session)
@@ -57,7 +57,11 @@ func (a *RPCTschExecAttack) Run(session interface{}, config *Config) error {
 		return fmt.Errorf("no command specified (-c flag)")
 	}
 
+	// Buffered run log, flushed on exit (success or post-auth failure).
+	host := hostFromAddr(rpcSession.Target)
 	rl := &runLog{}
+	defer func() { rl.Flush(config, host, "rpctschexec", config.Command, err) }()
+
 	rl.Printf("[*] Executing command via Task Scheduler (RPC relay)...")
 
 	// The dcerpc.Client is already bound to ITaskSchedulerService from the BIND relay
@@ -101,7 +105,6 @@ func (a *RPCTschExecAttack) Run(session interface{}, config *Config) error {
 	}
 
 	rl.Printf("[+] Command executed via Task Scheduler (RPC): %s (output not captured — RPC-only relay)", config.Command)
-	rl.Flush(config, hostFromAddr(rpcSession.Target), "rpctschexec", config.Command)
 
 	return nil
 }

