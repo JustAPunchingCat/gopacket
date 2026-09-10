@@ -22,7 +22,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
-	mrand "math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,8 +63,8 @@ func (a *RPCTschExecAttack) Run(session interface{}, config *Config) error {
 	// The dcerpc.Client is already bound to ITaskSchedulerService from the BIND relay
 	ts := tsch.NewTaskScheduler(rpcSession.Client)
 
-	// Generate random task name (matches Impacket pattern)
-	taskName := fmt.Sprintf("\\gopacket%04x", mrand.Intn(0xFFFF))
+	// Generate random task name
+	taskName := "\\" + randomName()
 
 	// Build task XML (runs as SYSTEM with HighestAvailable)
 	taskXML := buildTaskXML(config.Command)

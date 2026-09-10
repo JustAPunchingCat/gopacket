@@ -17,6 +17,7 @@ package relay
 import (
 	"fmt"
 	"log"
+	mrand "math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -96,6 +97,24 @@ func dumpResultf(format string, v ...interface{}) {
 	if dumpFile != nil {
 		fmt.Fprintln(dumpFile, line)
 	}
+}
+
+// cmdDoneMarker is appended to a command's output file on the target after the
+// command finishes; its presence (not merely the file's existence) is what
+// proves the command ran to completion (a blocked/killed command leaves a
+// partial or missing file).
+const cmdDoneMarker = "__DONE__"
+
+// randomName returns an 8-char lowercase alphanumeric name for services, tasks
+// and temp files — no tool-identifying prefix (the old "gopacket" prefix was a
+// trivial fingerprint on the target).
+func randomName() string {
+	const alnum = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 8)
+	for i := range b {
+		b[i] = alnum[mrand.Intn(len(alnum))]
+	}
+	return string(b)
 }
 
 // relayedIdentity returns "DOMAIN\user" from the last relayed Type3 (set in
