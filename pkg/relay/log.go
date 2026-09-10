@@ -131,18 +131,21 @@ func sanitizeFilePart(s string) string {
 	return strings.NewReplacer(":", "_", "/", "_", "\\", "_", "*", "_").Replace(s)
 }
 
-// Command result loot sink for -c exec attacks: on success each run appends a
-// header (identity, time, command) plus its output to <loot>/<attack>_<host>.txt,
-// mirroring the dump sink used by secretsdump/samdump.
-var (
-	cmdMu   sync.Mutex
-	cmdFile *os.File
-)
+// runLog buffers an exec attack's console lines so a successful run can be
+// written to its per-target loot file in full. Callers only flush on success —
+// failed attempts stay console-only.
+type runLog struct{ lines []string }
 
-// openCommandLoot opens <lootdir>/<attack>_<host>.txt in append mode and makes
-// it the active sink for commandLootf. If the file cannot be opened, logs a
-// warning and continues console-only.
-func openCommandLoot(cfg *Config, host, attack, command string) {
+// Printf prints a line to the console and records it for the run log.
+func (r *runLog) Printf(format string, v ...interface{}) {
+	line := fmt.Sprintf(format, v...)
+	log.Print(line)
+	r.lines = append(r.lines, line)
+}
+
+// Flush appends the buffered run (header + every recorded line) to
+// <lootdir>/<attack>_<host>.txt.
+func (r *runLog) Flush(cfg *Config, host, attack, command string) {
 	dir := cfg.LootDir
 	if dir == "" {
 		dir = "."
@@ -155,39 +158,16 @@ func openCommandLoot(cfg *Config, host, attack, command string) {
 		log.Printf("[-] Failed to open loot file %s: %v", name, err)
 		return
 	}
+	defer f.Close()
 
-	ts := time.Now().Format(time.RFC3339)
-	fmt.Fprintf(f, "\n# %s by %s on %s (%s)\n", attack, relayedIdentity(cfg), host, ts)
+	fmt.Fprintf(f, "\n# %s by %s on %s (%s)\n",
+		attack, relayedIdentity(cfg), host, time.Now().Format(time.RFC3339))
 	if command != "" {
 		fmt.Fprintf(f, "# command: %s\n", command)
 	}
-
-	cmdMu.Lock()
-	cmdFile = f
-	cmdMu.Unlock()
-
-	log.Printf("[*] Appending %s result to %s", attack, name)
-}
-
-// closeCommandLoot closes the active command loot file, if any.
-func closeCommandLoot() {
-	cmdMu.Lock()
-	defer cmdMu.Unlock()
-	if cmdFile != nil {
-		cmdFile.Close()
-		cmdFile = nil
+	for _, line := range r.lines {
+		fmt.Fprintln(f, line)
 	}
-}
 
-// commandLootf appends one result line to the active command loot file (if any)
-// and echoes it to the console.
-func commandLootf(format string, v ...interface{}) {
-	line := fmt.Sprintf(format, v...)
-	log.Print(line)
-
-	cmdMu.Lock()
-	defer cmdMu.Unlock()
-	if cmdFile != nil {
-		fmt.Fprintln(cmdFile, line)
-	}
+	log.Printf("[*] Appended %s result to %s", attack, name)
 }

